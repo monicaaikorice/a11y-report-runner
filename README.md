@@ -1,15 +1,14 @@
 # A11y Report Runner (Playwright + axe-core)
 
-[![CI](https://img.shields.io/github/actions/workflow/status/monicaaikorice/a11y-report-runner/ci.yml?branch=main)](https://github.com/monicaaikorice/a11y-report-runner/actions)  
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](#license)  
-[![TypeScript Friendly](https://img.shields.io/badge/JS-ESM-blue)](#)  
-[![Accessibility](https://img.shields.io/badge/axe--core-Enabled-5e5ce6.svg)](#)  
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](#license)  [![TypeScript Friendly](https://img.shields.io/badge/JS-ESM-blue)](#)  [![Accessibility](https://img.shields.io/badge/axe--core-Enabled-5e5ce6.svg)](#)  
 
 A zero-dependency (for the report HTML) accessibility scan script powered by **Playwright** and **axe-core**. It crawls a list of routes, runs axe, emits a consolidated **JSON** dataset and a human-readable **HTML** dashboard—perfect for CI and shareable audits.
 
 > Script file: `scripts/a11y-report.mjs` (ESM)
 
 ---
+
+<img width="1840" height="908" alt="Image" src="https://github.com/user-attachments/assets/335d9e61-d53c-46d6-b983-1b54bda21b15" />
 
 ## ✨ Features
 
