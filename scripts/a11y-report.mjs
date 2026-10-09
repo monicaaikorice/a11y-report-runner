@@ -3,7 +3,7 @@ import { chromium } from 'playwright'
 import AxeBuilder from '@axe-core/playwright'
 import { createRequire } from 'node:module'
 import { getAxeRunOptions, isBestPracticeOnly } from './axe-config.mjs'
-import { buildConfigurations, createUniqueRunDirectory, parseColorSchemes, parseViewports } from './run-config.mjs'
+import { buildConfigurations, createUniqueRunDirectory, parseColorSchemes, parseRoutes, parseViewports } from './run-config.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,8 +13,6 @@ const __dirname = path.dirname(__filename)
 const require = createRequire(import.meta.url)
 
 const BASE_URL = process.env.A11Y_BASE || 'http://localhost:3000'
-const ROUTES = (process.env.A11Y_ROUTES || '/, /blog, /projects, /services, /astra, /about')
-  .split(',').map(s => s.trim())
 const OUT_PARENT = path.resolve(process.env.A11Y_OUT || 'a11y-report')
 const JSON_FILENAME = 'axe-results.json'
 const HTML_FILENAME = 'axe-report.html'
@@ -35,9 +33,10 @@ function getPackageVersion(packageName) {
 }
 
 async function run() {
+  const routes = parseRoutes(process.env.A11Y_ROUTES)
   const viewports = parseViewports(process.env.A11Y_VIEWPORTS)
   const colorSchemes = parseColorSchemes(process.env.A11Y_COLOR_SCHEMES)
-  const configurations = buildConfigurations(ROUTES, BASE_URL, viewports, colorSchemes)
+  const configurations = buildConfigurations(routes, BASE_URL, viewports, colorSchemes)
   const runDirectory = await createUniqueRunDirectory(OUT_PARENT)
   const jsonPath = path.join(runDirectory, JSON_FILENAME)
   const htmlPath = path.join(runDirectory, HTML_FILENAME)
@@ -65,7 +64,7 @@ async function run() {
         })
         try {
           const page = await context.newPage()
-          for (const [routeIndex, route] of ROUTES.entries()) {
+          for (const [routeIndex, route] of routes.entries()) {
             const configuration = configurations.find(item =>
               item.routeIndex === routeIndex && item.viewport.name === viewport.name &&
               item.colorScheme === colorScheme

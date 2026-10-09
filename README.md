@@ -25,17 +25,22 @@ Start the website you want to audit, then run:
 
 ```sh
 A11Y_BASE="http://localhost:3000" \
-A11Y_ROUTES="/" \
 A11Y_OUT="a11y-report" \
 npm run a11y:scan
 ```
 
-`A11Y_BASE` can point to any reachable local or deployed website. Routes are comma-separated paths resolved against that base URL.
+`A11Y_BASE` can point to any reachable local or deployed website. By default, the runner scans only `/`. Set `A11Y_ROUTES` to any comma-separated route list; whitespace around entries is ignored. Relative paths are resolved against the base URL, and absolute URLs can also be supplied. For example:
+
+```sh
+A11Y_BASE="http://localhost:3000" \
+A11Y_ROUTES="/, /about, /projects/example" \
+npm run a11y:scan
+```
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `A11Y_BASE` | `http://localhost:3000` | Base URL used to resolve routes |
-| `A11Y_ROUTES` | `/, /blog, /projects, /services, /astra, /about` | Comma-separated route list; replace these example defaults with routes for the target site |
+| `A11Y_ROUTES` | `/` | Comma-separated paths or absolute URLs to scan; whitespace around routes is ignored |
 | `A11Y_VIEWPORTS` | `default=1280x720` | Comma-separated named CSS viewport sizes such as `mobile=390x844,desktop=1440x900` |
 | `A11Y_COLOR_SCHEMES` | `light` | Comma-separated `light`, `dark`, or both; every selected viewport/scheme combination is scanned |
 | `A11Y_OUT` | `a11y-report` | Parent directory for unique per-run report directories; existing reports are never overwritten |

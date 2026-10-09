@@ -10,7 +10,7 @@ import test from 'node:test'
 import AxeBuilder from '@axe-core/playwright'
 import { chromium } from 'playwright'
 import { AXE_RUN_TAGS, getAxeRunOptions, isBestPracticeOnly } from '../scripts/axe-config.mjs'
-import { buildConfigurations, parseColorSchemes, parseViewports } from '../scripts/run-config.mjs'
+import { buildConfigurations, parseColorSchemes, parseRoutes, parseViewports } from '../scripts/run-config.mjs'
 
 const repoRoot = new URL('../', import.meta.url).pathname
 const wcagTags = new Set(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
@@ -26,6 +26,9 @@ test('keeps the cumulative WCAG 2.2 A/AA and best-practice axe configuration', (
 })
 
 test('parses defaults, validates environment lists, and creates deterministic matrix IDs', () => {
+  assert.deepEqual(parseRoutes(undefined), ['/'])
+  assert.deepEqual(parseRoutes('/about, /work ,https://example.invalid/status'), ['/about', '/work', 'https://example.invalid/status'])
+  assert.throws(() => parseRoutes(' /, , /about '), /empty route entries/)
   assert.deepEqual(parseViewports(undefined), [{ name: 'default', width: 1280, height: 720 }])
   assert.deepEqual(parseViewports('mobile=390x844, desktop=1440x900'), [
     { name: 'mobile', width: 390, height: 844 },
@@ -55,6 +58,7 @@ test('parses defaults, validates environment lists, and creates deterministic ma
 
 function runCli(env) {
   const childEnv = { ...process.env }
+  delete childEnv.A11Y_ROUTES
   delete childEnv.A11Y_VIEWPORTS
   delete childEnv.A11Y_COLOR_SCHEMES
   Object.assign(childEnv, env)
@@ -107,7 +111,7 @@ test('CLI scans defaults and the viewport/scheme product without overwriting rep
     A11Y_OUT: outputParent
   }
 
-  const defaultRun = await runCli({ ...baseEnv, A11Y_ROUTES: '/' })
+  const defaultRun = await runCli(baseEnv)
   assert.equal(defaultRun.status, 0, `${defaultRun.stdout}\n${defaultRun.stderr}`)
   const firstDirectory = (await readdir(outputParent))[0]
   const firstPath = join(outputParent, firstDirectory)
@@ -117,6 +121,8 @@ test('CLI scans defaults and the viewport/scheme product without overwriting rep
   const defaultHtmlBytes = await readFile(firstHtmlPath)
   const defaultJson = JSON.parse(defaultJsonBytes)
   assert.equal(defaultJson.configurations.length, 1)
+  assert.equal(defaultJson.configurations[0].route, '/')
+  assert.equal(defaultJson.configurations[0].url, `${baseEnv.A11Y_BASE}/`)
   assert.deepEqual(defaultJson.configurations[0].viewport, { name: 'default', width: 1280, height: 720 })
   assert.equal(defaultJson.configurations[0].colorScheme, 'light')
   assert.match(defaultRun.stdout, /JSON report:/)
@@ -127,7 +133,7 @@ test('CLI scans defaults and the viewport/scheme product without overwriting rep
 
   const matrixRun = await runCli({
     ...baseEnv,
-    A11Y_ROUTES: '/,/other',
+    A11Y_ROUTES: ' / , /other ',
     A11Y_VIEWPORTS: 'mobile=390x844,desktop=1440x900',
     A11Y_COLOR_SCHEMES: 'light,dark'
   })
@@ -141,6 +147,7 @@ test('CLI scans defaults and the viewport/scheme product without overwriting rep
   const json = JSON.parse(await readFile(join(matrixPath, 'axe-results.json'), 'utf8'))
   const html = await readFile(join(matrixPath, 'axe-report.html'), 'utf8')
   assert.equal(json.configurations.length, 8)
+  assert.deepEqual(new Set(json.configurations.map(configuration => configuration.route)), new Set(['/', '/other']))
   assert.equal(new Set(json.configurations.map(configuration => configuration.id)).size, 8)
   assert.equal(new Set(json.configurations.map(configuration => configuration.colorScheme)).size, 2)
   assert.equal(new Set(json.configurations.map(configuration => configuration.viewport.name)).size, 2)
@@ -205,5 +212,10 @@ test('invalid CLI configuration exits before creating report output', async t =>
   const badScheme = await runCli({ A11Y_OUT: outputParent, A11Y_COLOR_SCHEMES: 'auto' })
   assert.equal(badScheme.status, 1)
   assert.match(badScheme.stderr, /Invalid A11Y_COLOR_SCHEMES/)
+  await assert.rejects(stat(outputParent), { code: 'ENOENT' })
+
+  const emptyRoute = await runCli({ A11Y_OUT: outputParent, A11Y_ROUTES: '/,/about,' })
+  assert.equal(emptyRoute.status, 1)
+  assert.match(emptyRoute.stderr, /empty route entries/)
   await assert.rejects(stat(outputParent), { code: 'ENOENT' })
 })

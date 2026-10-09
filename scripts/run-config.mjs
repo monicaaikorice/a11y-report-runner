@@ -6,6 +6,20 @@ export const DEFAULT_VIEWPORTS = Object.freeze([
   Object.freeze({ name: 'default', width: 1280, height: 720 })
 ])
 export const DEFAULT_COLOR_SCHEMES = Object.freeze(['light'])
+export const DEFAULT_ROUTES = Object.freeze(['/'])
+
+export function parseRoutes(value) {
+  if (value === undefined) return [...DEFAULT_ROUTES]
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error('A11Y_ROUTES must contain one or more comma-separated routes.')
+  }
+
+  const routes = value.split(',').map(route => route.trim())
+  if (routes.some(route => route === '')) {
+    throw new Error('A11Y_ROUTES cannot contain empty route entries.')
+  }
+  return routes
+}
 
 export function parseViewports(value) {
   if (value === undefined) return DEFAULT_VIEWPORTS.map(viewport => ({ ...viewport }))
