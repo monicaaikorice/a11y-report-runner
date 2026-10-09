@@ -2,6 +2,8 @@
 
 A standalone accessibility scanning CLI built with Playwright and axe-core. It scans a configured list of routes on any locally running or deployed website and writes consolidated JSON results and a human-readable HTML report.
 
+<img width="1840" height="908" alt="Image" src="https://github.com/user-attachments/assets/335d9e61-d53c-46d6-b983-1b54bda21b15" />
+
 ## Requirements
 
 - Node.js 24.x
