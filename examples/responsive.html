@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!--
+    Ally Report Runner reproducible acceptance-test viewport fixture. Its CSS layout
+    changes at 48rem to exercise scans configured at different viewport dimensions.
+    Review and update acceptance-test expectations and generated example reports
+    before changing behavior, markup, or accessibility characteristics.
+  -->
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Responsive fixture</title>
+  <style>
+    body { margin: 1rem; font: 1rem/1.5 system-ui, sans-serif; }
+    .panels { display: grid; gap: 1rem; }
+    .panel { padding: 1rem; border: 1px solid currentColor; }
+    .wide-note { display: none; }
+    @media (min-width: 48rem) {
+      .panels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .wide-note { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Responsive fixture</h1>
+    <p>Resize the CSS viewport to see the content flow change without JavaScript.</p>
+    <p class="wide-note">This note appears at wider CSS viewports.</p>
+    <div class="panels">
+      <section class="panel" aria-labelledby="narrow-heading">
+        <h2 id="narrow-heading">First panel</h2>
+        <p>Panel content remains readable as the layout changes.</p>
+      </section>
+      <section class="panel" aria-labelledby="second-heading">
+        <h2 id="second-heading">Second panel</h2>
+        <p>The grid becomes two columns when there is enough space.</p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * CLI entry point: resolve the configured route/environment matrix, scan it with
  * Chromium and axe, then write one JSON and one static HTML report per run.
@@ -157,23 +158,50 @@ function buildHtml(data) {
     inapplicable: data.inapplicable.length,
     passes: data.passes.length
   }
-  const configurationList = data.configurations.map(configuration => `
-    <li><code>${esc(configuration.id)}</code> — route ${configuration.routeIndex + 1}: ${esc(configuration.route)} · ${esc(configuration.url)} · ${esc(configuration.viewport.name)} (${configuration.viewport.width}×${configuration.viewport.height}) · ${esc(configuration.colorScheme)}</li>
-  `).join('')
+  const configurationList = data.configurations.map(configuration =>
+    `<li><code>${esc(configuration.id)}</code> — route ${configuration.routeIndex + 1}: ${esc(configuration.route)} · ${esc(configuration.url)} · ${esc(configuration.viewport.name)} (${configuration.viewport.width}×${configuration.viewport.height}) · ${esc(configuration.colorScheme)}</li>`
+  ).join('\n    ')
   const configurationLabel = item => {
     const viewport = item.viewport || {}
     return `${item.configurationId || 'unknown'} · route ${(item.routeIndex ?? 0) + 1}: ${item.route || item.url || data.url} · ${viewport.name || 'viewport'} (${viewport.width || '?'}×${viewport.height || '?'}) · ${item.colorScheme || 'scheme'}`
   }
-  const section = (title, items, kind) => {
-    if (!items.length) return `<section><h2>${esc(title)} (0)</h2><p class="none">None</p></section>`
-    return `
-<section>
-  <h2>${esc(title)} (${items.length})</h2>
-  <ul class="issues">
-    ${items.map(v => `
+  const failureDetails = node => {
+    if (!node.failureSummary) return ''
+    const groups = [
+      { introduction: 'Fix any of the following:', checks: node.any || [] },
+      { introduction: 'Fix all of the following:', checks: [...(node.none || []), ...(node.all || [])] }
+    ].filter(group => group.checks.length)
+    const conditionCount = groups.reduce((count, group) => count + group.checks.length, 0)
+    const hasCompleteMessages = groups.every(group => group.checks.every(check => typeof check.message === 'string' && check.message.length))
+
+    // axe exposes these groups separately; use them instead of splitting localized prose on newlines.
+    if (conditionCount < 2 || !hasCompleteMessages) {
+      return `<div class="fail">${esc(node.failureSummary)}</div>`
+    }
+
+    // Keep template indentation out of this pre-wrapped container; otherwise whitespace becomes blank lines.
+    return `<div class="fail">${groups.map(group => `<p class="failure-intro">${esc(group.introduction)}</p><ul class="failure-conditions">${group.checks.map(check => `<li>${esc(check.message)}</li>`).join('')}</ul>`).join('')}</div>`
+  }
+  const issueList = (items, kind) => {
+    if (!items.length) return '<p class="none">None</p>'
+    return `<ul class="issues">
+    ${items.map(v => {
+      const nodeDetails = Array.isArray(v.nodes) && v.nodes.length ? `
+          <details>
+            <summary>Nodes (${v.nodes.length})</summary>
+            <ol class="nodes">
+              ${v.nodes.map(n => `
+                <li>
+                  <div class="target"><code>${esc((n.target||[]).join(' '))}</code></div>
+                  ${failureDetails(n)}
+                </li>
+              `.trim()).join('\n              ')}
+            </ol>
+          </details>` : ''
+      return `
       <li class="issue ${kind}">
         <div class="head">
-          <div class="id">${esc(v.id)}</div>
+          <h3 class="id">${esc(v.id)}</h3>
           <div class="meta">
             ${badge(v.impact || 'n/a', 'impact')}
             ${badge((v.tags||[]).filter(t=>t.startsWith('wcag')).join(', ') || 'wcag-n/a','wcag')}
@@ -182,26 +210,23 @@ function buildHtml(data) {
         </div>
         <p class="configuration">Configuration: ${esc(configurationLabel(v))}</p>
         <div class="help">${esc(v.help || '')}</div>
-        ${Array.isArray(v.nodes) && v.nodes.length ? `
-          <details>
-            <summary>Nodes (${v.nodes.length})</summary>
-            <ol class="nodes">
-              ${v.nodes.slice(0,50).map(n => `
-                <li>
-                  <div class="target"><code>${esc((n.target||[]).join(' '))}</code></div>
-                  ${n.failureSummary ? `<div class="fail">${esc(n.failureSummary)}</div>` : ''}
-                </li>
-              `).join('')}
-            </ol>
-          </details>
-        `:''}
-      </li>
-    `).join('')}
-  </ul>
-</section>`
+        ${nodeDetails ? nodeDetails + '\n        ' : ''}</li>
+    `.trim()
+    }).join('\n    ')}
+  </ul>`
   }
+  const section = (title, items, kind) => `
+<section>
+  <h2>${esc(title)} (${items.length})</h2>
+  ${issueList(items, kind)}
+</section>`
+  const collapsedSection = (title, items, kind) => `
+<details class="secondary-results ${kind}">
+  <summary>${esc(title)} (${items.length})</summary>
+  ${issueList(items, kind)}
+</details>`
 
-  return `<!doctype html>
+  const html = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -209,38 +234,47 @@ function buildHtml(data) {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   :root { --bg:#0e0b14; --panel:#14111c; --text:#e6e1f4; --muted:#a7a0bd; --pink:#ff59b9; --cyan:#60e2ff; --violet:#b79cff; --bad:#ff6b6b; --warn:#ffb020; --ok:#34d399; }
-  body { margin:0; background:var(--bg); color:var(--text); font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial; }
-  header { padding:24px; border-bottom:1px solid #241f33; background:linear-gradient(180deg, rgba(255,89,185,.08), transparent 60%); }
-  header h1 { margin:0 0 6px; font-size:20px; }
-  header .meta { color:var(--muted); font-size:12px; }
-  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
-  .summary { display:flex; gap:12px; flex-wrap:wrap; margin: 16px 0 28px; }
-  .card { background:var(--panel); border:1px solid #241f33; border-radius:12px; padding:12px 14px; min-width:160px; }
-  .card h2 { margin:0 0 4px; font-size:13px; color:var(--muted); }
-  .card .num { font-size:20px; font-weight:700; }
-  section { margin: 24px 0; }
-  h2 { font-size:16px; margin: 0 0 12px; }
+  body { margin:0; background:var(--bg); color:var(--text); font: 1rem/1.6 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial; }
+  /* One-pixel borders stay crisp; the three-pixel focus outline remains prominent. */
+  header { padding:1.5rem; border-bottom:1px solid #241f33; background:linear-gradient(180deg, rgba(255,89,185,.08), transparent 60%); }
+  header h1 { margin:0 0 .375rem; font-size:1.75rem; line-height:1.2; overflow-wrap:anywhere; }
+  header .meta { color:var(--muted); font-size:.875rem; line-height:1.5; overflow-wrap:anywhere; }
+  main { padding:1.5rem; max-width:68.75rem; margin:0 auto; }
+  .summary { display:flex; gap:.75rem; flex-wrap:wrap; margin:1rem 0 1.75rem; }
+  .card { background:var(--panel); border:1px solid #241f33; border-radius:.75rem; padding:.75rem .875rem; flex:1 1 10rem; min-width:0; }
+  .card-label { margin:0 0 .25rem; font-size:.875rem; font-weight:600; line-height:1.5; color:var(--muted); overflow-wrap:anywhere; }
+  .card .num { font-size:1.25rem; line-height:1.2; font-weight:700; }
+  section { margin:1.5rem 0; }
+  h2 { font-size:1.375rem; line-height:1.3; margin:0 0 .75rem; overflow-wrap:anywhere; }
   .configurations { overflow-wrap:anywhere; }
-  .configurations ul { padding-left:24px; }
-  .issues { list-style:none; padding:0; margin:0; display:grid; gap:12px; }
-  .issue { background:var(--panel); border:1px solid #241f33; border-radius:12px; padding:12px; }
-  .issue .head { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
-  .issue .id { font-weight:700; }
-  .issue .configuration { color:var(--muted); font-size:12px; overflow-wrap:anywhere; margin:6px 0; }
-  .issue .help { color:var(--muted); margin:6px 0 8px; }
-  .issue .url { color:var(--cyan); font-size:12px; overflow-wrap:anywhere; }
-  .badge { display:inline-block; padding:2px 6px; border-radius:999px; font-size:11px; margin-right:6px; border:1px solid #2a243b; background:#1a1626; }
+  .configurations ul { padding-left:1.5rem; }
+  .issues { list-style:none; padding:0; margin:0; display:grid; gap:.75rem; }
+  .issue { min-width:0; background:var(--panel); border:1px solid #241f33; border-radius:.75rem; padding:.75rem; }
+  .issue .head { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.75rem; align-items:baseline; }
+  .issue .id { margin:0; font-size:1.125rem; line-height:1.3; font-weight:700; overflow-wrap:anywhere; }
+  .issue .meta { min-width:0; }
+  .issue .configuration { color:var(--muted); font-size:1rem; line-height:1.5; overflow-wrap:anywhere; margin:.375rem 0; }
+  .issue .help { color:var(--muted); margin:.375rem 0 .5rem; overflow-wrap:anywhere; }
+  .issue .url { color:var(--cyan); font-size:1rem; line-height:1.5; overflow-wrap:anywhere; }
+  .badge { display:inline-block; padding:.125rem .375rem; border-radius:999px; font-size:.875rem; line-height:1.5; margin-right:.375rem; border:1px solid #2a243b; background:#1a1626; overflow-wrap:anywhere; }
   .impact { color:#ffd9e9; }
   .wcag { color:#d8eafe; }
   .issue.violations { border-color: #3a2030; }
   .issue.incomplete { border-color: #3a2b1f; }
   .issue.inapplicable { border-color: #1f2f2f; }
-  details { background:#100d18; border:1px solid #241f33; border-radius:10px; padding:8px 10px; }
-  summary { cursor:pointer; color:var(--violet); }
-  .nodes { margin:8px 0 0 18px; }
-  code { background:#100d18; color:#eae4ff; padding:1px 4px; border-radius:6px; overflow-wrap:anywhere; }
+  details { background:#100d18; border:1px solid #241f33; border-radius:.625rem; padding:.5rem .625rem; }
+  summary { cursor:pointer; color:var(--violet); font-weight:600; line-height:1.5; min-height:2.75rem; box-sizing:border-box; padding:.5rem 0; overflow-wrap:anywhere; }
+  summary:focus-visible { outline:3px solid var(--cyan); outline-offset:3px; border-radius:.1875rem; }
+  .secondary-results { margin:1.5rem 0; }
+  .secondary-results > summary { font-size:1.25rem; line-height:1.3; }
+  .nodes { margin:.5rem 0 0; padding-inline-start:1rem; }
+  code { background:#100d18; color:#eae4ff; padding:.0625rem .25rem; border-radius:.375rem; overflow-wrap:anywhere; }
+  .fail { white-space:pre-wrap; overflow-wrap:anywhere; }
+  .failure-intro { margin:.5rem 0 .25rem; }
+  .failure-conditions { margin:.25rem 0 .5rem; padding-inline-start:1.5rem; }
+  .failure-conditions li { overflow-wrap:anywhere; }
   .none { color:var(--muted); }
-  footer { color:var(--muted); font-size:12px; padding:24px; border-top:1px solid #241f33; margin-top:32px; }
+  footer { color:var(--muted); font-size:.875rem; line-height:1.5; padding:1.5rem; border-top:1px solid #241f33; margin-top:2rem; }
 </style>
 </head>
 <body>
@@ -248,11 +282,11 @@ function buildHtml(data) {
   <h1>Accessibility Report</h1>
   <div class="meta">Base: ${esc(data.url)} • Generated: ${esc(data.timestamp)} • Runner ${esc(data.versions.runner)} • axe-core ${esc(data.versions.axeCore)} • @axe-core/playwright ${esc(data.versions.axePlaywright)} • Playwright ${esc(data.versions.playwright)}</div>
   <div class="summary">
-    <div class="card"><h2>WCAG Violations</h2><div class="num" style="color:var(--bad)">${counts.violations}</div></div>
-    <div class="card"><h2>Best-practice findings</h2><div class="num">${counts.bestPractices}</div></div>
-    <div class="card"><h2>Incomplete</h2><div class="num" style="color:var(--warn)">${counts.incomplete}</div></div>
-    <div class="card"><h2>Inapplicable</h2><div class="num">${counts.inapplicable}</div></div>
-    <div class="card"><h2>Passes</h2><div class="num" style="color:var(--ok)">${counts.passes}</div></div>
+    <div class="card"><p class="card-label">WCAG Violations</p><div class="num" style="color:var(--bad)">${counts.violations}</div></div>
+    <div class="card"><p class="card-label">Incomplete checks</p><div class="num" style="color:var(--warn)">${counts.incomplete}</div></div>
+    <div class="card"><p class="card-label">Best-practice findings</p><div class="num">${counts.bestPractices}</div></div>
+    <div class="card"><p class="card-label">Passed checks</p><div class="num" style="color:var(--ok)">${counts.passes}</div></div>
+    <div class="card"><p class="card-label">Inapplicable rules</p><div class="num">${counts.inapplicable}</div></div>
   </div>
 </header>
 <main>
@@ -261,16 +295,18 @@ function buildHtml(data) {
     <ul>${configurationList}</ul>
   </section>
   ${section('WCAG Violations', data.violations, 'violations')}
-  ${section('Best-practice Findings', data.bestPractices, 'best-practices')}
   ${section('Incomplete', data.incomplete, 'incomplete')}
-  ${section('Inapplicable', data.inapplicable, 'inapplicable')}
-  ${section('Passes', data.passes, 'passes')}
+  ${section('Best-practice Findings', data.bestPractices, 'best-practices')}
+  ${collapsedSection('Passed axe checks', data.passes, 'passes')}
+  ${collapsedSection('Inapplicable axe rules', data.inapplicable, 'inapplicable')}
 </main>
 <footer>
   Generated with Playwright + axe-core. This HTML was handcrafted so you always get a human-friendly report.
 </footer>
 </body>
 </html>`
+  // Template indentation creates whitespace-only lines; remove their spaces so checked-in reports stay diff-clean.
+  return html.replace(/^[ \t]+$/gm, '')
 }
 
 run().catch(err => {

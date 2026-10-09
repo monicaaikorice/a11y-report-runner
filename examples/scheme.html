@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!--
+    Ally Report Runner reproducible acceptance-test color-scheme fixture. The page
+    uses prefers-color-scheme to exercise light and dark browser-context scans. Review
+    and update acceptance-test expectations and generated example reports before
+    changing behavior, markup, or accessibility characteristics.
+  -->
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Color-scheme fixture</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 1rem; padding: 1rem; font: 1rem/1.5 system-ui, sans-serif; color: #202124; background: #fff; }
+    @media (prefers-color-scheme: dark) {
+      body { color: #f4f4f4; background: #202124; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Color-scheme fixture</h1>
+    <p>The page responds to the browser's emulated preferred color scheme.</p>
+  </main>
+</body>
+</html>

@@ -2,7 +2,9 @@
 
 A standalone accessibility scanning CLI built with Playwright and axe-core. It scans a configured list of routes on any locally running or deployed website and writes consolidated JSON results and a human-readable HTML report.
 
-<img width="1840" height="908" alt="Image" src="https://github.com/user-attachments/assets/335d9e61-d53c-46d6-b983-1b54bda21b15" />
+## Using the report runner does not guarantee accessibility compliance. Human tests (keyboard navigation, screen reader, zoom, etc) are needed for verification of automated testing results. This is meant to be a tool, not a fix.
+
+<img width="1840" height="908" alt="Screenshot of the generated accessibility report" src="https://github.com/user-attachments/assets/335d9e61-d53c-46d6-b983-1b54bda21b15" />
 
 ## Requirements
 
@@ -10,33 +12,46 @@ A standalone accessibility scanning CLI built with Playwright and axe-core. It s
 - npm (use the included lockfile with `npm ci`)
 - Playwright's Chromium browser and its system dependencies
 
-## Install
+## Install from npm
 
-From a clean checkout:
+Install the runner as a development dependency in the application you want to audit:
+
+```sh
+npm install --save-dev ally-report-runner
+npx playwright install chromium
+```
+
+These registry installation commands apply after publication is approved. The release candidate currently retains `private: true`, so it cannot yet be installed from npm.
+
+On Linux hosts that need Playwright's operating-system browser dependencies, use `npx playwright install --with-deps chromium` in an environment where system package installation is permitted, or install the required system packages separately.
+
+## Install from source
+
+From a clean repository checkout:
 
 ```sh
 npm ci
 npm run a11y:install:chromium
 ```
 
-On Linux hosts that need Playwright's operating-system browser dependencies, install those separately with the appropriate system package manager or use Playwright's documented `--with-deps` option in an environment where system package installation is permitted.
-
 ## Run
 
-Start the website you want to audit, then run:
+Start the website you want to audit, then run the installed CLI:
 
 ```sh
 A11Y_BASE="http://localhost:3000" \
 A11Y_OUT="a11y-report" \
-npm run a11y:scan
+npx ally-report-runner
 ```
+
+The CLI takes its configuration from the environment variables below; it has no command-line option parser. From a source checkout, `npm run a11y:scan` runs the same CLI.
 
 `A11Y_BASE` can point to any reachable local or deployed website. By default, the runner scans only `/`. Set `A11Y_ROUTES` to any comma-separated route list; whitespace around entries is ignored. Relative paths are resolved against the base URL, and absolute URLs can also be supplied. For example:
 
 ```sh
 A11Y_BASE="http://localhost:3000" \
 A11Y_ROUTES="/, /about, /projects/example" \
-npm run a11y:scan
+npx ally-report-runner
 ```
 
 | Variable | Default | Description |
@@ -68,16 +83,32 @@ Each execution creates a unique UTC timestamp directory beneath `A11Y_OUT`, for 
 
 The JSON adds a `versions` object and a `configurations` manifest. Each result carries its `configurationId`, route, resolved URL, viewport, and color scheme. Configuration IDs are deterministic for the same route and environment. Existing result arrays remain aggregated across every selected configuration, so consumers of repeated audits should use `configurationId` to distinguish findings. The generated static HTML report lists every tested configuration and labels findings accordingly.
 
-## Commands
+## Example fixtures
+
+The [repository examples](https://github.com/monicaaikorice/a11y-report-runner/tree/main/examples) directory contains five independent HTML pages for an accessible baseline, intentional WCAG violations, a best-practice-only finding, responsive content, and light/dark color-scheme behavior. The intentional defects are documented in the fixture comments and [fixture guide](https://github.com/monicaaikorice/a11y-report-runner/blob/main/examples/README.md); they are demonstrations and should not be corrected. Fixtures and sample reports remain in the repository and are excluded from the npm package.
+
+To reproduce the sample scan, start the static fixture server:
+
+```sh
+python3 -m http.server 8765 --directory examples
+```
+
+Then run the documented route, viewport, and color-scheme matrix in the [fixture guide](https://github.com/monicaaikorice/a11y-report-runner/blob/main/examples/README.md). Re-running the command creates a new timestamped output directory and preserves the repository sample.
+
+## Source maintenance commands
+
+These npm scripts are for working in a source checkout:
 
 - `npm run a11y:scan` — scan configured routes.
 - `npm run a11y:install:chromium` — install the Chromium build matching the locked Playwright version.
 - `npm run check` — check the CLI, configuration modules, and test JavaScript syntax.
-- `npm test` — run the generic browser-backed axe configuration test.
+- `npm test` — run configuration, browser-backed scanning, report-generation, accessibility-tree, and responsive reflow tests.
 
 ## Limitations
 
 The runner uses Chromium and scans the Cartesian product of configured routes, viewports, and color schemes. The defaults remain one 1280×720 CSS viewport and light color scheme. CSS viewport and `prefers-color-scheme` emulation do not simulate browser zoom, text-only resizing, operating-system display scaling, forced colors, or assistive technology. The runner does not discover routes, start the target application, authenticate, or interact with page controls; prepared interactive states remain future work. Configure target routes with `A11Y_ROUTES`.
+
+The release candidate remains marked `private: true` during qualification. The packed tarball can be installed locally for consumer testing, but npm publication remains disabled until it is separately approved.
 
 A scan with findings still exits successfully; invalid configuration and execution or output errors exit unsuccessfully. The test suite verifies rule selection, matrix scans, collision handling, and the generated report using controlled HTML. This automated report check does not replace keyboard, screen-reader, zoom/reflow, or other manual accessibility testing.
 

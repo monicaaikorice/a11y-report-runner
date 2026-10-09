@@ -1,7 +1,15 @@
 {
-  "name": "a11y-report-runner",
+  "name": "ally-report-runner",
   "version": "1.0.0",
   "description": "Standalone Playwright and axe-core accessibility reporting CLI",
+  "bin": {
+    "ally-report-runner": "./scripts/a11y-report.mjs"
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "scripts/"
+  ],
   "scripts": {
     "a11y:scan": "node scripts/a11y-report.mjs",
     "a11y:install:chromium": "playwright install chromium",

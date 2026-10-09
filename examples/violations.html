@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!--
+    Ally Report Runner reproducible acceptance-test fixture: intentional violations.
+    The unnamed button and link deliberately trigger axe findings; do not remediate
+    them as ordinary defects. The gradient text is included for contrast manual review.
+    If changing behavior, markup, or accessibility characteristics, review and update
+    the corresponding acceptance-test expectations and generated example reports.
+  -->
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Intentional violations fixture</title>
+  <style>
+    .uncertain-contrast { color: #777; background: linear-gradient(90deg, #fff, #000); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Intentional violations fixture</h1>
+    <!-- Intentional WCAG defect: this button has no accessible name (button-name). -->
+    <button type="button"></button>
+    <!-- Intentional WCAG defect: this link has no accessible name (link-name). -->
+    <a href="/"> </a>
+    <!-- Intentional manual-review case: gradient background makes contrast inconclusive to axe. -->
+    <p class="uncertain-contrast">Contrast across the gradient requires human review.</p>
+    <p>These defects are examples for the runner and should not be corrected.</p>
+  </main>
+</body>
+</html>
