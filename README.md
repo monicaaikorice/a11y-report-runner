@@ -36,7 +36,9 @@ npm run a11y:scan
 | --- | --- | --- |
 | `A11Y_BASE` | `http://localhost:3000` | Base URL used to resolve routes |
 | `A11Y_ROUTES` | `/, /blog, /projects, /services, /astra, /about` | Comma-separated route list; replace these example defaults with routes for the target site |
-| `A11Y_OUT` | `a11y-report` | Output directory; existing report files with the same names are overwritten |
+| `A11Y_VIEWPORTS` | `default=1280x720` | Comma-separated named CSS viewport sizes such as `mobile=390x844,desktop=1440x900` |
+| `A11Y_COLOR_SCHEMES` | `light` | Comma-separated `light`, `dark`, or both; every selected viewport/scheme combination is scanned |
+| `A11Y_OUT` | `a11y-report` | Parent directory for unique per-run report directories; existing reports are never overwritten |
 
 ## Automated axe coverage
 
@@ -52,21 +54,25 @@ This is an automated testing baseline, not a claim of WCAG 2.2 AA conformance. A
 
 ## Reports
 
+Each execution creates a unique UTC timestamp directory beneath `A11Y_OUT`, for example `a11y-report/2026-10-08T21-30-00Z/`. If that name already exists, the runner atomically creates a suffixed directory (`-01`, `-02`, and so on); it never reuses or overwrites an existing directory. The reports retain their established names inside each run directory:
+
 - `axe-results.json` — consolidated axe results, including WCAG violations, best-practice-only failures, passes, incomplete checks, and inapplicable rules.
 - `axe-report.html` — a human-readable report with separate WCAG and best-practice sections, rule IDs, impact, tags, affected selectors, and failure summaries.
+
+The JSON adds a `versions` object and a `configurations` manifest. Each result carries its `configurationId`, route, resolved URL, viewport, and color scheme. Configuration IDs are deterministic for the same route and environment. Existing result arrays remain aggregated across every selected configuration, so consumers of repeated audits should use `configurationId` to distinguish findings. The generated static HTML report lists every tested configuration and labels findings accordingly.
 
 ## Commands
 
 - `npm run a11y:scan` — scan configured routes.
 - `npm run a11y:install:chromium` — install the Chromium build matching the locked Playwright version.
-- `npm run check` — check the CLI and axe configuration JavaScript syntax.
+- `npm run check` — check the CLI, configuration modules, and test JavaScript syntax.
 - `npm test` — run the generic browser-backed axe configuration test.
 
 ## Limitations
 
-The runner uses Chromium, one default viewport, and a light color-scheme context. It does not discover routes, start the target application, authenticate, interact with page controls, or test alternate viewport sizes and page states. Configure the target routes with `A11Y_ROUTES`; for interactive content, perform additional manual checks or separately automate the relevant states.
+The runner uses Chromium and scans the Cartesian product of configured routes, viewports, and color schemes. The defaults remain one 1280×720 CSS viewport and light color scheme. CSS viewport and `prefers-color-scheme` emulation do not simulate browser zoom, text-only resizing, operating-system display scaling, forced colors, or assistive technology. The runner does not discover routes, start the target application, authenticate, or interact with page controls; prepared interactive states remain future work. Configure target routes with `A11Y_ROUTES`.
 
-A scan with findings still exits successfully; the CLI exits unsuccessfully when execution throws. The test suite verifies the configured rule selection and output using controlled HTML, but it does not replace site-specific manual accessibility testing.
+A scan with findings still exits successfully; invalid configuration and execution or output errors exit unsuccessfully. The test suite verifies rule selection, matrix scans, collision handling, and the generated report using controlled HTML. This automated report check does not replace keyboard, screen-reader, zoom/reflow, or other manual accessibility testing.
 
 ## License
 
