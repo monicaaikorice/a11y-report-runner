@@ -1,4 +1,11 @@
-// scripts/a11y-report.mjs
+/**
+ * CLI entry point: resolve the configured route/environment matrix, scan it with
+ * Chromium and axe, then write one JSON and one static HTML report per run.
+ * Scans are sequential and findings remain grouped by category, with each result
+ * annotated so an aggregate report still identifies the environment that found it.
+ * Findings do not change the exit status; invalid configuration or execution
+ * and output errors do.
+ */
 import { chromium } from 'playwright'
 import AxeBuilder from '@axe-core/playwright'
 import { createRequire } from 'node:module'
@@ -18,6 +25,13 @@ const JSON_FILENAME = 'axe-results.json'
 const HTML_FILENAME = 'axe-report.html'
 const RUNNER_VERSION = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf-8')).version
 
+/**
+ * Find a package's own manifest rather than relying on its resolved entry point
+ * being adjacent to package.json (which is not guaranteed by package exports).
+ * @param {string} packageName Installed package name resolvable from this CLI.
+ * @returns {string} Installed package version.
+ * @throws {Error} If the package entry point or its manifest cannot be resolved.
+ */
 function getPackageVersion(packageName) {
   let directory = path.dirname(require.resolve(packageName))
   while (directory !== path.dirname(directory)) {
@@ -32,6 +46,7 @@ function getPackageVersion(packageName) {
   throw new Error(`Unable to determine installed version for ${packageName}.`)
 }
 
+/** Run all configured scans, closing browser resources even when navigation or axe fails. */
 async function run() {
   const routes = parseRoutes(process.env.A11Y_ROUTES)
   const viewports = parseViewports(process.env.A11Y_VIEWPORTS)
@@ -55,6 +70,7 @@ async function run() {
     passes: [], violations: [], bestPractices: [], incomplete: [], inapplicable: []
   }
 
+  // Keep environment combinations isolated while aggregating routes into one reproducible run.
   try {
     for (const viewport of viewports) {
       for (const colorScheme of colorSchemes) {
@@ -74,6 +90,7 @@ async function run() {
             await page.addStyleTag({ content: '* { scroll-behavior: auto !important }' })
 
             const results = await new AxeBuilder({ page }).options(getAxeRunOptions()).analyze()
+            // Preserve provenance after aggregation so findings remain attributable to their tested environment.
             const annotate = item => ({
               ...item,
               url: configuration.url,
@@ -106,6 +123,7 @@ async function run() {
   const json = JSON.stringify(merged, null, 2)
   const html = buildHtml(merged)
   try {
+    // Exclusive file creation is a second safeguard against replacing any report unexpectedly.
     await fs.promises.writeFile(jsonPath, json, { encoding: 'utf-8', flag: 'wx' })
     await fs.promises.writeFile(htmlPath, html, { encoding: 'utf-8', flag: 'wx' })
   } catch (error) {
@@ -122,6 +140,15 @@ function esc(s = '') {
 function badge(txt, cls) {
   return `<span class="badge ${cls}">${esc(txt)}</span>`
 }
+
+/**
+ * Render the aggregated result as a self-contained document; inline CSS and
+ * native disclosure elements keep the report useful without JavaScript.
+ * Dynamic content is escaped before insertion because report data comes from
+ * the audited page as well as the runner's configuration.
+ * @param {object} data Consolidated scan metadata and axe result categories.
+ * @returns {string} Complete HTML document for the run.
+ */
 function buildHtml(data) {
   const counts = {
     violations: data.violations.length,
