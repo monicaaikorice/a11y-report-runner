@@ -1,6 +1,7 @@
 // scripts/a11y-report.mjs
 import { chromium } from 'playwright'
 import AxeBuilder from '@axe-core/playwright'
+import { getAxeRunOptions, isBestPracticeOnly } from './axe-config.mjs'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -25,7 +26,7 @@ async function run() {
   const merged = {
     url: BASE_URL,
     timestamp: new Date().toISOString(),
-    passes: [], violations: [], incomplete: [], inapplicable: []
+    passes: [], violations: [], bestPractices: [], incomplete: [], inapplicable: []
   }
 
   for (const route of ROUTES) {
@@ -34,10 +35,16 @@ async function run() {
     await page.goto(url, { waitUntil: 'networkidle' })
     await page.addStyleTag({ content: '* { scroll-behavior: auto !important }' })
 
-    const results = await new AxeBuilder({ page }).analyze()
+    const results = await new AxeBuilder({ page }).options(getAxeRunOptions()).analyze()
 
-    for (const key of ['passes','violations','incomplete','inapplicable']) {
-      merged[key].push(...results[key].map(item => ({ ...item, url })))
+    for (const key of ['passes', 'violations', 'incomplete', 'inapplicable']) {
+      const items = results[key].map(item => ({ ...item, url }))
+      if (key === 'violations') {
+        merged.violations.push(...items.filter(item => !isBestPracticeOnly(item)))
+        merged.bestPractices.push(...items.filter(isBestPracticeOnly))
+      } else {
+        merged[key].push(...items)
+      }
     }
   }
 
@@ -61,6 +68,7 @@ function badge(txt, cls) {
 function buildHtml(data) {
   const counts = {
     violations: data.violations.length,
+    bestPractices: data.bestPractices.length,
     incomplete: data.incomplete.length,
     inapplicable: data.inapplicable.length,
     passes: data.passes.length
@@ -145,14 +153,16 @@ function buildHtml(data) {
   <h1>Accessibility Report</h1>
   <div class="meta">Base: ${esc(data.url)} • Generated: ${esc(data.timestamp)}</div>
   <div class="summary">
-    <div class="card"><h3>Violations</h3><div class="num" style="color:var(--bad)">${counts.violations}</div></div>
+    <div class="card"><h3>WCAG Violations</h3><div class="num" style="color:var(--bad)">${counts.violations}</div></div>
+    <div class="card"><h3>Best-practice findings</h3><div class="num">${counts.bestPractices}</div></div>
     <div class="card"><h3>Incomplete</h3><div class="num" style="color:var(--warn)">${counts.incomplete}</div></div>
     <div class="card"><h3>Inapplicable</h3><div class="num">${counts.inapplicable}</div></div>
     <div class="card"><h3>Passes</h3><div class="num" style="color:var(--ok)">${counts.passes}</div></div>
   </div>
 </header>
 <main>
-  ${section('Violations', data.violations, 'violations')}
+  ${section('WCAG Violations', data.violations, 'violations')}
+  ${section('Best-practice Findings', data.bestPractices, 'best-practices')}
   ${section('Incomplete', data.incomplete, 'incomplete')}
   ${section('Inapplicable', data.inapplicable, 'inapplicable')}
   ${section('Passes', data.passes, 'passes')}

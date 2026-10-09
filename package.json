@@ -5,7 +5,8 @@
   "scripts": {
     "a11y:scan": "node scripts/a11y-report.mjs",
     "a11y:install:chromium": "playwright install chromium",
-    "check": "node --check scripts/a11y-report.mjs"
+    "check": "node --check scripts/a11y-report.mjs && node --check scripts/axe-config.mjs && node --check test/axe-config.test.mjs",
+    "test": "node --test"
   },
   "repository": {
     "type": "git",
