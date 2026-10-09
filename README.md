@@ -21,8 +21,6 @@ npm install --save-dev ally-report-runner
 npx playwright install chromium
 ```
 
-These registry installation commands apply after publication is approved. The release candidate currently retains `private: true`, so it cannot yet be installed from npm.
-
 On Linux hosts that need Playwright's operating-system browser dependencies, use `npx playwright install --with-deps chromium` in an environment where system package installation is permitted, or install the required system packages separately.
 
 ## Install from source
@@ -107,8 +105,6 @@ These npm scripts are for working in a source checkout:
 ## Limitations
 
 The runner uses Chromium and scans the Cartesian product of configured routes, viewports, and color schemes. The defaults remain one 1280×720 CSS viewport and light color scheme. CSS viewport and `prefers-color-scheme` emulation do not simulate browser zoom, text-only resizing, operating-system display scaling, forced colors, or assistive technology. The runner does not discover routes, start the target application, authenticate, or interact with page controls; prepared interactive states remain future work. Configure target routes with `A11Y_ROUTES`.
-
-The release candidate remains marked `private: true` during qualification. The packed tarball can be installed locally for consumer testing, but npm publication remains disabled until it is separately approved.
 
 A scan with findings still exits successfully; invalid configuration and execution or output errors exit unsuccessfully. The test suite verifies rule selection, matrix scans, collision handling, and the generated report using controlled HTML. This automated report check does not replace keyboard, screen-reader, zoom/reflow, or other manual accessibility testing.
 
