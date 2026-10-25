@@ -2,7 +2,9 @@
 
 A standalone accessibility scanning CLI built with Playwright and axe-core. It scans a configured list of routes on any locally running or deployed website and writes consolidated JSON results and a human-readable HTML report.
 
-## Using the report runner does not guarantee accessibility compliance. Human tests (keyboard navigation, screen reader, zoom, etc) are needed for verification of automated testing results. This is meant to be a tool, not a fix.
+### Using the report runner does not guarantee accessibility compliance. Human tests (keyboard navigation, screen reader, zoom, etc) are needed for verification of automated testing results. This is meant to be a tool, not a fix.
+
+---
 
 <img width="1840" height="908" alt="Screenshot of the generated accessibility report" src="https://github.com/user-attachments/assets/335d9e61-d53c-46d6-b983-1b54bda21b15" />
 
