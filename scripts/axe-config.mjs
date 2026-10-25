@@ -22,7 +22,8 @@ const WCAG_TAGS = new Set([
 
 /**
  * Return axe's native run configuration for the declared WCAG and best-practice
- * tags; target-size is enabled explicitly because axe leaves it disabled by default.
+ * tags; target-size is enabled explicitly because axe leaves it disabled by default,
+ * while label-content-name-mismatch stays disabled to preserve the prior baseline.
  * @returns {{runOnly: {type: 'tag', values: string[]}, rules: object}} Axe options.
  */
 export function getAxeRunOptions() {
@@ -30,7 +31,9 @@ export function getAxeRunOptions() {
     runOnly: { type: 'tag', values: [...AXE_RUN_TAGS] },
     rules: {
       // axe disables this WCAG 2.2 AA target-size rule by default; include it in the declared baseline.
-      'target-size': { enabled: true }
+      'target-size': { enabled: true },
+      // axe 4.14 enables this rule by default; keep the established rule set unchanged.
+      'label-content-name-mismatch': { enabled: false }
     }
   }
 }

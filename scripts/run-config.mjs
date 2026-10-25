@@ -7,6 +7,17 @@ import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 
+const SENSITIVE_QUERY_KEY = /(?:authorization|auth|token|secret|password|passwd|credential|signature|apikey|accesskey|session|jwt|code)/
+
+function isSensitiveQueryKey(key) {
+  const normalized = String(key).toLowerCase().replace(/[^a-z0-9]/g, '')
+  return SENSITIVE_QUERY_KEY.test(normalized) || normalized === 'sig' || normalized.endsWith('sig')
+}
+
+function hasSensitiveFragment(fragment) {
+  return [...new URLSearchParams(fragment).keys()].some(isSensitiveQueryKey)
+}
+
 /**
  * @typedef {object} ScanConfiguration
  * @property {string} id Stable identifier for the route and browser environment.
@@ -22,6 +33,70 @@ export const DEFAULT_VIEWPORTS = Object.freeze([
 ])
 export const DEFAULT_COLOR_SCHEMES = Object.freeze(['light'])
 export const DEFAULT_ROUTES = Object.freeze(['/'])
+
+/** Parse the supported Playwright browser distributions. */
+export function parseBrowserChannel(value) {
+  const channel = value ?? 'bundled'
+  if (!['bundled', 'chrome', 'msedge'].includes(channel)) {
+    throw new Error('A11Y_BROWSER_CHANNEL must be bundled, chrome, or msedge.')
+  }
+  return channel
+}
+
+/** Build Playwright options without selecting arbitrary executable paths. */
+export function getBrowserLaunchOptions(channel, chromiumSandbox) {
+  return channel === 'bundled'
+    ? { chromiumSandbox }
+    : { channel, chromiumSandbox }
+}
+
+/** Replace opaque missing-channel errors with installation guidance, without installing a browser. */
+export function formatBrowserLaunchError(channel, error) {
+  const message = error?.message || String(error)
+  if (channel === 'bundled') return message
+
+  const displayName = channel === 'chrome' ? 'Google Chrome' : 'Microsoft Edge'
+  if (/distribution .+ is not found|executable doesn't exist at/i.test(message)) {
+    const detail = message.split('\n', 1)[0]
+    return `${displayName} was selected by A11Y_BROWSER_CHANNEL but was not found in a Playwright-supported install location. Install or update it separately using the browser vendor's supported method; this runner does not install system browsers. ${detail}`
+  }
+  return `${displayName} was selected by A11Y_BROWSER_CHANNEL but could not be launched. Verify its installation, version compatibility, and system dependencies. ${message}`
+}
+
+/**
+ * Redact common credential-bearing URL components for logs and reports.
+ * The URL used for navigation is never changed. This is defense in depth, not
+ * a guarantee against secrets embedded in arbitrary path or parameter names.
+ * @param {string} value URL to sanitize for persisted/displayed output.
+ * @returns {string} URL with userinfo and recognized secret values redacted.
+ */
+export function redactUrl(value) {
+  try {
+    const url = new URL(value)
+    if (url.username) url.username = '[REDACTED]'
+    if (url.password) url.password = '[REDACTED]'
+    const parameters = [...url.searchParams.entries()]
+    if (parameters.some(([key]) => isSensitiveQueryKey(key))) {
+      url.search = ''
+      for (const [key, parameterValue] of parameters) {
+        url.searchParams.append(key, isSensitiveQueryKey(key) ? '[REDACTED]' : parameterValue)
+      }
+    }
+    if (hasSensitiveFragment(url.hash.slice(1))) url.hash = '[REDACTED]'
+    return url.toString()
+  } catch {
+    return String(value)
+  }
+}
+
+/** Convert a positive integer environment value or return the supplied default. */
+export function parsePositiveInteger(value, name, fallback) {
+  if (value === undefined) return fallback
+  if (!/^\d+$/.test(value)) throw new Error(`${name} must be a positive integer.`)
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive safe integer.`)
+  return parsed
+}
 
 /**
  * Parse comma-separated routes, defaulting to the origin root so the CLI makes
@@ -139,7 +214,7 @@ export function buildConfigurations(routes, baseUrl, viewports, colorSchemes) {
  */
 export async function createUniqueRunDirectory(parentDirectory, date = new Date()) {
   try {
-    await mkdir(parentDirectory, { recursive: true })
+    await mkdir(parentDirectory, { recursive: true, mode: 0o700 })
   } catch (error) {
     throw new Error(`Unable to create report parent directory "${parentDirectory}": ${error.message}`, { cause: error })
   }
@@ -150,7 +225,7 @@ export async function createUniqueRunDirectory(parentDirectory, date = new Date(
     const directory = path.join(parentDirectory, name)
     try {
       // Non-recursive mkdir is atomic: EEXIST advances the suffix instead of reusing old reports.
-      await mkdir(directory)
+      await mkdir(directory, { mode: 0o700 })
       return directory
     } catch (error) {
       if (error.code === 'EEXIST') continue

@@ -11,7 +11,7 @@ import { chromium } from 'playwright'
 import AxeBuilder from '@axe-core/playwright'
 import { createRequire } from 'node:module'
 import { getAxeRunOptions, isBestPracticeOnly } from './axe-config.mjs'
-import { buildConfigurations, createUniqueRunDirectory, parseColorSchemes, parseRoutes, parseViewports } from './run-config.mjs'
+import { buildConfigurations, createUniqueRunDirectory, formatBrowserLaunchError, getBrowserLaunchOptions, parseBrowserChannel, parseColorSchemes, parsePositiveInteger, parseRoutes, parseViewports, redactUrl } from './run-config.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -49,17 +49,35 @@ function getPackageVersion(packageName) {
 
 /** Run all configured scans, closing browser resources even when navigation or axe fails. */
 async function run() {
+  const navigationTimeoutMs = parsePositiveInteger(process.env.A11Y_NAVIGATION_TIMEOUT_MS, 'A11Y_NAVIGATION_TIMEOUT_MS', 30_000)
+  const maxConfigurations = parsePositiveInteger(process.env.A11Y_MAX_CONFIGURATIONS, 'A11Y_MAX_CONFIGURATIONS', undefined)
+  const chromiumSandbox = parseBoolean(process.env.A11Y_CHROMIUM_SANDBOX, 'A11Y_CHROMIUM_SANDBOX', false)
+  const browserChannel = parseBrowserChannel(process.env.A11Y_BROWSER_CHANNEL)
   const routes = parseRoutes(process.env.A11Y_ROUTES)
   const viewports = parseViewports(process.env.A11Y_VIEWPORTS)
   const colorSchemes = parseColorSchemes(process.env.A11Y_COLOR_SCHEMES)
   const configurations = buildConfigurations(routes, BASE_URL, viewports, colorSchemes)
-  const runDirectory = await createUniqueRunDirectory(OUT_PARENT)
+  if (maxConfigurations !== undefined && configurations.length > maxConfigurations) {
+    throw new Error(`Scan matrix has ${configurations.length} configurations; A11Y_MAX_CONFIGURATIONS is ${maxConfigurations}.`)
+  }
+  let browser
+  try {
+    browser = await chromium.launch(getBrowserLaunchOptions(browserChannel, chromiumSandbox))
+  } catch (error) {
+    throw new Error(formatBrowserLaunchError(browserChannel, error), { cause: error })
+  }
+
+  let runDirectory
+  try {
+    runDirectory = await createUniqueRunDirectory(OUT_PARENT)
+  } catch (error) {
+    await browser.close()
+    throw error
+  }
   const jsonPath = path.join(runDirectory, JSON_FILENAME)
   const htmlPath = path.join(runDirectory, HTML_FILENAME)
-
-  const browser = await chromium.launch()
   const merged = {
-    url: BASE_URL,
+    url: redactUrl(BASE_URL),
     timestamp: new Date().toISOString(),
     versions: {
       runner: RUNNER_VERSION,
@@ -67,7 +85,11 @@ async function run() {
       axePlaywright: getPackageVersion('@axe-core/playwright'),
       playwright: getPackageVersion('playwright')
     },
-    configurations,
+    configurations: configurations.map(configuration => ({
+      ...configuration,
+      route: redactRoute(configuration.route, BASE_URL),
+      url: redactUrl(configuration.url)
+    })),
     passes: [], violations: [], bestPractices: [], incomplete: [], inapplicable: []
   }
 
@@ -81,12 +103,14 @@ async function run() {
         })
         try {
           const page = await context.newPage()
+          page.setDefaultNavigationTimeout(navigationTimeoutMs)
           for (const [routeIndex, route] of routes.entries()) {
             const configuration = configurations.find(item =>
               item.routeIndex === routeIndex && item.viewport.name === viewport.name &&
               item.colorScheme === colorScheme
             )
-            console.log(`🔎 Scanning ${configuration.url} [${configuration.id}: ${viewport.name} ${viewport.width}x${viewport.height}, ${colorScheme}]`)
+            const reportUrl = redactUrl(configuration.url)
+            console.log(`🔎 Scanning ${reportUrl} [${configuration.id}: ${viewport.name} ${viewport.width}x${viewport.height}, ${colorScheme}]`)
             await page.goto(configuration.url, { waitUntil: 'networkidle' })
             await page.addStyleTag({ content: '* { scroll-behavior: auto !important }' })
 
@@ -94,8 +118,8 @@ async function run() {
             // Preserve provenance after aggregation so findings remain attributable to their tested environment.
             const annotate = item => ({
               ...item,
-              url: configuration.url,
-              route: configuration.route,
+              url: reportUrl,
+              route: redactRoute(configuration.route, BASE_URL),
               routeIndex: configuration.routeIndex,
               configurationId: configuration.id,
               viewport: configuration.viewport,
@@ -125,14 +149,32 @@ async function run() {
   const html = buildHtml(merged)
   try {
     // Exclusive file creation is a second safeguard against replacing any report unexpectedly.
-    await fs.promises.writeFile(jsonPath, json, { encoding: 'utf-8', flag: 'wx' })
-    await fs.promises.writeFile(htmlPath, html, { encoding: 'utf-8', flag: 'wx' })
+    await fs.promises.writeFile(jsonPath, json, { encoding: 'utf-8', flag: 'wx', mode: 0o600 })
+    await fs.promises.writeFile(htmlPath, html, { encoding: 'utf-8', flag: 'wx', mode: 0o600 })
   } catch (error) {
     throw new Error(`Unable to write report output in "${runDirectory}": ${error.message}`, { cause: error })
   }
 
   console.log(`✅ JSON report: ${jsonPath}`)
   console.log(`✅ HTML report: ${htmlPath}`)
+}
+
+function redactRoute(route, baseUrl) {
+  try {
+    const parsed = new URL(route, baseUrl)
+    const safe = new URL(redactUrl(parsed.toString()))
+    if (/^[a-z][a-z\d+.-]*:/i.test(route)) return safe.toString()
+    return `${safe.pathname}${safe.search}${safe.hash}`
+  } catch {
+    return route
+  }
+}
+
+function parseBoolean(value, name, fallback) {
+  if (value === undefined) return fallback
+  if (value === 'true') return true
+  if (value === 'false') return false
+  throw new Error(`${name} must be "true" or "false".`)
 }
 
 function esc(s = '') {
@@ -310,6 +352,8 @@ function buildHtml(data) {
 }
 
 run().catch(err => {
-  console.error(err)
+  let message = err?.stack || err?.message || String(err)
+  message = message.replace(/https?:\/\/[^\s"'<>]+/g, url => redactUrl(url))
+  console.error(message)
   process.exit(1)
 })

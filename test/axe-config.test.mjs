@@ -5,14 +5,14 @@ import { createServer } from 'node:http'
 import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import test from 'node:test'
 import AxeBuilder from '@axe-core/playwright'
 import { chromium } from 'playwright'
 import { AXE_RUN_TAGS, getAxeRunOptions, isBestPracticeOnly } from '../scripts/axe-config.mjs'
-import { buildConfigurations, parseColorSchemes, parseRoutes, parseViewports } from '../scripts/run-config.mjs'
+import { buildConfigurations, formatBrowserLaunchError, getBrowserLaunchOptions, parseBrowserChannel, parseColorSchemes, parsePositiveInteger, parseRoutes, parseViewports, redactUrl } from '../scripts/run-config.mjs'
 
-const repoRoot = new URL('../', import.meta.url).pathname
+const repoRoot = fileURLToPath(new URL('../', import.meta.url))
 const wcagTags = new Set(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
 const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -24,11 +24,27 @@ test('keeps the cumulative WCAG 2.2 A/AA and best-practice axe configuration', (
   ])
   assert.deepEqual(getAxeRunOptions(), {
     runOnly: { type: 'tag', values: [...AXE_RUN_TAGS] },
-    rules: { 'target-size': { enabled: true } }
+    rules: {
+      'target-size': { enabled: true },
+      'label-content-name-mismatch': { enabled: false }
+    }
   })
 })
 
 test('parses defaults, validates environment lists, and creates deterministic matrix IDs', () => {
+  assert.equal(parseBrowserChannel(undefined), 'bundled')
+  assert.equal(parseBrowserChannel('bundled'), 'bundled')
+  assert.equal(parseBrowserChannel('chrome'), 'chrome')
+  assert.equal(parseBrowserChannel('msedge'), 'msedge')
+  assert.throws(() => parseBrowserChannel('chrome-beta'), /A11Y_BROWSER_CHANNEL must be bundled, chrome, or msedge/)
+  assert.deepEqual(getBrowserLaunchOptions('bundled', false), { chromiumSandbox: false })
+  assert.deepEqual(getBrowserLaunchOptions('chrome', true), { channel: 'chrome', chromiumSandbox: true })
+  assert.deepEqual(getBrowserLaunchOptions('msedge', false), { channel: 'msedge', chromiumSandbox: false })
+  const missingChrome = formatBrowserLaunchError('chrome', new Error("browserType.launch: Chromium distribution 'chrome' is not found at /opt/google/chrome/chrome\nRun npx playwright install chrome"))
+  assert.match(missingChrome, /Google Chrome was selected.*not found/)
+  assert.match(missingChrome, /does not install system browsers/)
+  assert.doesNotMatch(missingChrome, /Run npx playwright install chrome/)
+
   assert.deepEqual(parseRoutes(undefined), ['/'])
   assert.deepEqual(parseRoutes('/about, /work ,https://example.invalid/status'), ['/about', '/work', 'https://example.invalid/status'])
   assert.throws(() => parseRoutes(' /, , /about '), /empty route entries/)
@@ -44,6 +60,14 @@ test('parses defaults, validates environment lists, and creates deterministic ma
   assert.throws(() => parseViewports('mobile=390x844,broken'), /Invalid A11Y_VIEWPORTS entry/)
   assert.throws(() => parseColorSchemes('light,dark,light'), /Duplicate A11Y_COLOR_SCHEMES/)
   assert.throws(() => parseColorSchemes('auto'), /Invalid A11Y_COLOR_SCHEMES/)
+  assert.equal(parsePositiveInteger(undefined, 'A11Y_MAX_CONFIGURATIONS', undefined), undefined)
+  assert.equal(parsePositiveInteger('25', 'A11Y_MAX_CONFIGURATIONS', undefined), 25)
+  assert.throws(() => parsePositiveInteger('0', 'A11Y_MAX_CONFIGURATIONS', undefined), /positive/)
+  assert.throws(() => parsePositiveInteger('not-a-number', 'A11Y_MAX_CONFIGURATIONS', undefined), /positive integer/)
+
+  const sanitized = redactUrl('https://user:password@example.test/path?access_token=secret&theme=dark&X-Amz-Signature=signed#token=fragment')
+  assert.doesNotMatch(sanitized, /password|secret|signed|fragment/)
+  assert.match(sanitized, /theme=dark/)
 
   const routes = ['/', '/other']
   const viewports = parseViewports('mobile=390x844,desktop=1440x900')
@@ -64,6 +88,10 @@ function runCli(env) {
   delete childEnv.A11Y_ROUTES
   delete childEnv.A11Y_VIEWPORTS
   delete childEnv.A11Y_COLOR_SCHEMES
+  delete childEnv.A11Y_CHROMIUM_SANDBOX
+  delete childEnv.A11Y_BROWSER_CHANNEL
+  delete childEnv.A11Y_MAX_CONFIGURATIONS
+  delete childEnv.A11Y_NAVIGATION_TIMEOUT_MS
   Object.assign(childEnv, env)
   const child = spawn(process.execPath, ['scripts/a11y-report.mjs'], {
     cwd: repoRoot,
@@ -132,9 +160,29 @@ test('CLI scans defaults and the viewport/scheme product without overwriting rep
   assert.equal(defaultJson.configurations[0].colorScheme, 'light')
   assert.match(defaultRun.stdout, /JSON report:/)
   assert.match(defaultRun.stdout, /HTML report:/)
-  assert.equal(defaultJson.versions.axeCore, '4.13.0')
-  assert.equal(defaultJson.versions.axePlaywright, '4.13.0')
-  assert.equal(defaultJson.versions.playwright, '1.63.0')
+  assert.equal(defaultJson.versions.axeCore, '4.14.0')
+  assert.equal(defaultJson.versions.axePlaywright, '4.14.0')
+  assert.equal(defaultJson.versions.playwright, '1.64.1')
+  if (process.platform !== 'win32') {
+    assert.equal((await stat(firstPath)).mode & 0o777, 0o700)
+    assert.equal((await stat(firstJsonPath)).mode & 0o777, 0o600)
+    assert.equal((await stat(firstHtmlPath)).mode & 0o777, 0o600)
+  }
+
+  const secretRun = await runCli({
+    ...baseEnv,
+    A11Y_ROUTES: '/?access_token=fixture-secret&view=summary'
+  })
+  assert.equal(secretRun.status, 0, `${secretRun.stdout}\n${secretRun.stderr}`)
+  assert.doesNotMatch(secretRun.stdout, /fixture-secret/)
+  const secretDirectory = (await readdir(outputParent)).find(directory => directory !== firstDirectory)
+  const secretPath = join(outputParent, secretDirectory)
+  const secretJson = await readFile(join(secretPath, 'axe-results.json'), 'utf8')
+  const secretHtml = await readFile(join(secretPath, 'axe-report.html'), 'utf8')
+  assert.doesNotMatch(secretJson, /fixture-secret/)
+  assert.doesNotMatch(secretHtml, /fixture-secret/)
+  assert.match(secretJson, /%5BREDACTED%5D/i)
+  assert.match(secretJson, /view=summary/)
 
   const matrixRun = await runCli({
     ...baseEnv,
@@ -144,10 +192,10 @@ test('CLI scans defaults and the viewport/scheme product without overwriting rep
   })
   assert.equal(matrixRun.status, 0, `${matrixRun.stdout}\n${matrixRun.stderr}`)
   const directories = await readdir(outputParent)
-  assert.equal(directories.length, 2)
+  assert.equal(directories.length, 3)
   assert.deepEqual(await readFile(firstJsonPath), defaultJsonBytes)
   assert.deepEqual(await readFile(firstHtmlPath), defaultHtmlBytes)
-  const matrixDirectory = directories.find(directory => directory !== firstDirectory)
+  const matrixDirectory = directories.find(directory => directory !== firstDirectory && directory !== secretDirectory)
   const matrixPath = join(outputParent, matrixDirectory)
   const json = JSON.parse(await readFile(join(matrixPath, 'axe-results.json'), 'utf8'))
   const html = await readFile(join(matrixPath, 'axe-report.html'), 'utf8')
@@ -173,6 +221,7 @@ test('CLI scans defaults and the viewport/scheme product without overwriting rep
   assert.equal(new Set(allResults.map(rule => `${rule.configurationId}:${rule.id}`)).size, 12 * 90)
   assert.ok(allResults.every(rule => !rule.tags.includes('experimental')))
   assert.ok(!allResults.some(rule => rule.id === 'color-contrast-enhanced'))
+  assert.ok(!allResults.some(rule => rule.id === 'label-content-name-mismatch'))
   assert.match(html, /Tested configurations \(12\)/)
   assert.match(html, /Configuration: cfg-/)
   assert.match(html, /Best-practice Findings \(/)
@@ -404,5 +453,19 @@ test('invalid CLI configuration exits before creating report output', async t =>
   const emptyRoute = await runCli({ A11Y_OUT: outputParent, A11Y_ROUTES: '/,/about,' })
   assert.equal(emptyRoute.status, 1)
   assert.match(emptyRoute.stderr, /empty route entries/)
+  await assert.rejects(stat(outputParent), { code: 'ENOENT' })
+
+  const cappedMatrix = await runCli({
+    A11Y_OUT: outputParent,
+    A11Y_ROUTES: '/,/about',
+    A11Y_MAX_CONFIGURATIONS: '1'
+  })
+  assert.equal(cappedMatrix.status, 1)
+  assert.match(cappedMatrix.stderr, /A11Y_MAX_CONFIGURATIONS is 1/)
+  await assert.rejects(stat(outputParent), { code: 'ENOENT' })
+
+  const invalidSandbox = await runCli({ A11Y_OUT: outputParent, A11Y_CHROMIUM_SANDBOX: 'yes' })
+  assert.equal(invalidSandbox.status, 1)
+  assert.match(invalidSandbox.stderr, /A11Y_CHROMIUM_SANDBOX must be/)
   await assert.rejects(stat(outputParent), { code: 'ENOENT' })
 })

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import test from 'node:test'
 import { createUniqueRunDirectory } from '../scripts/run-config.mjs'
 
@@ -18,7 +18,7 @@ test('creates distinct same-second output directories atomically and preserves e
   assert.equal(new Set(directories).size, 6)
   assert.ok(directories.every(directory => directory !== existing))
   assert.equal(await readFile(sentinelPath, 'utf8'), 'previous report')
-  assert.deepEqual(directories.map(directory => directory.split('/').at(-1)).sort(), [
+  assert.deepEqual(directories.map(directory => basename(directory)).sort(), [
     '2026-10-08T21-30-00Z-01',
     '2026-10-08T21-30-00Z-02',
     '2026-10-08T21-30-00Z-03',
@@ -39,5 +39,5 @@ test('creates distinct same-second output directories atomically and preserves e
   const simultaneous = await Promise.all(Array.from({ length: 6 }, () => createUniqueRunDirectory(freshParent, date)))
   assert.equal(new Set(simultaneous).size, 6)
   assert.ok(simultaneous.some(directory => directory.endsWith('2026-10-08T21-30-00Z')))
-  assert.ok(simultaneous.every(directory => directory.startsWith(freshParent + '/')))
+  assert.ok(simultaneous.every(directory => dirname(directory) === freshParent))
 })
