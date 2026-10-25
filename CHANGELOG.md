@@ -4,7 +4,7 @@ All notable changes to Ally Report Runner are documented here.
 
 This changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-10-25
 
 ### Added
 
@@ -38,5 +38,5 @@ This changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Initial public release of the standalone Playwright and axe-core accessibility reporting CLI, with configurable route, viewport, and color-scheme scans and JSON and static HTML reports.
 
-[Unreleased]: https://github.com/monicaaikorice/a11y-report-runner/compare/v1.0.0...HEAD
+[1.1.0]: https://github.com/monicaaikorice/a11y-report-runner/releases/tag/v1.1.0
 [1.0.0]: https://github.com/monicaaikorice/a11y-report-runner/releases/tag/v1.0.0
